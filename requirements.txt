@@ -1,0 +1,11 @@
+fastapi==0.109.0
+uvicorn==0.27.0
+gradio==4.16.0
+langchain==0.1.4
+langchain-google-vertexai==0.0.5
+langchain-community==0.0.16
+google-cloud-firestore==2.14.0
+faiss-cpu==1.7.4
+pypdf==4.0.1
+arxiv==2.1.0
+pydantic==2.6.0
