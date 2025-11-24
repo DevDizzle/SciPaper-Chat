@@ -31,6 +31,6 @@ gcloud run deploy ${SERVICE} \
 Firestore in Native mode requires no additional indexes for the simple ordering used here.
 
 ## Verification Checklist
-1. **TC-UR1.1 Upload**: Upload a PDF in the Gradio UI; expect summary within 10 seconds.
-2. **TC-NFR6 Persistence**: Ask a question, refresh the UI, then ask "What did I just ask you?" to confirm history retrieval from Firestore.
+1. **TC-UR1.1 Upload**: Call `POST /analyze` with a PDF or ArXiv ID; expect status and summary within 10 seconds.
+2. **TC-NFR6 Persistence**: Use `POST /chat` twice with the same session ID; confirm Firestore stores both turns and the second answer reflects history.
 3. **TC-UR3.3 Scalability**: Confirm the Cloud Run service shows `min-instances=0` and `max-instances=10` in the deployment parameters.
