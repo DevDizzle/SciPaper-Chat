@@ -8,24 +8,24 @@
 ## Data flow
 1. **Upload** (`/upload`): accept PDF → parse with pypdf → chunk → embed via Vertex AI → upsert to Vertex AI Vector Search (namespaced by `paper_id`).
 2. **Summaries**: initial summary generated with Gemini and stored in Firestore for quick retrieval.
-3. **Query** (`/query`): ADK-style agent retrieves top-k chunks from Vector Search, combines with chat history from Firestore, and calls Gemini for a grounded answer.
+3. **Query** (`/query`): ADK-style agent retrieves top-k chunk IDs from Vector Search, fetches chunk text from Firestore, combines with chat history from Firestore, and calls Gemini for a grounded answer.
 4. **Summary retrieval** (`/summary/{paper_id}`): read the latest persisted summary from Firestore.
 
 ## Components
 - `ingestion/pipeline.py`: orchestrates PDF parsing, chunking, embeddings, Vector Search upserts, and summary creation.
 - `services/vector_search.py`: wraps Vertex AI Vector Search endpoint for upsert + query using namespace filters on `paper_id`.
 - `services/embedding.py`: Vertex AI `text-embedding-004` helper.
-- `services/storage.py`: Firestore storage for chat messages and summaries.
+- `services/storage.py`: Firestore storage for chat messages, chunk text, and summaries.
 - `agents/adk_agent.py`: lightweight agent that mirrors ADK patterns—retrieves context then calls Gemini.
 - `main.py`: FastAPI endpoints for upload, query, summary, and health.
 - `config.py`: centralizes environment-based configuration (project, region, model IDs, index IDs, bucket).
 
 ## Indexing strategy
 - **Single global index** in Vertex AI Vector Search with namespace restricts: each chunk upsert includes `paper_id` in restricts to isolate queries.
-- **Metadata** includes `paper_id`, `chunk_index`, and `text` for prompt reconstruction; extend as needed (page, section, authors).
+- **Only IDs + restricts in the index**: Vector Search stores the embedding and datapoint ID (`{paper_id}-{chunk_index}`) with `paper_id` restricts; chunk text lives solely in Firestore to avoid oversized metadata and align with Google guidance.
 
 ## Storage decisions
-- **Firestore**: chosen for lightweight session + summary metadata; Collections: `sessions/{session_id}/messages` and `summaries/{paper_id}`.
+- **Firestore**: chosen for lightweight session + summary metadata; Collections: `sessions/{session_id}/messages`, `summaries/{paper_id}`, and `paper_chunks` documents keyed by the Vector Search datapoint ID containing chunk text + metadata.
 - **GCS**: optional PDF storage; ingestion operates on uploaded bytes regardless.
 
 ## Models

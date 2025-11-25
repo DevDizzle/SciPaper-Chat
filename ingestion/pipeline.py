@@ -52,14 +52,10 @@ def ingest_pdf(pdf_bytes: bytes, paper_id: Optional[str] = None) -> Tuple[str, s
     chunks = _chunk_text(text)
     embeddings = embedding.embed_texts(chunks)
 
-    metadatas = [
-        {"paper_id": paper_identifier, "chunk_index": i, "text": chunk}
-        for i, chunk in enumerate(chunks)
-    ]
+    storage.persist_chunks(paper_identifier, chunks)
     vector_search.upsert_embeddings(
         paper_identifier,
         embeddings,
-        metadatas,
     )
 
     summary = _summarize(chunks)

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from google.cloud import firestore
 
@@ -61,3 +61,50 @@ def fetch_summary(paper_id: str) -> Optional[str]:
     if not doc.exists:
         return None
     return doc.to_dict().get("summary")
+
+
+def persist_chunks(paper_id: str, chunks: List[str]) -> None:
+    """Persist chunk text in Firestore keyed by vector ID.
+
+    Uses a dedicated collection where each document ID matches the vector search
+    datapoint ID (`{paper_id}-{chunk_index}`) so retrieval can map directly from
+    Vector Search results.
+    """
+
+    if not paper_id or not chunks:
+        return
+
+    client = get_client()
+    collection = client.collection(config.CHUNKS_COLLECTION)
+    batch = client.batch()
+
+    for idx, text in enumerate(chunks):
+        doc_id = f"{paper_id}-{idx}"
+        doc_ref = collection.document(doc_id)
+        batch.set(
+            doc_ref,
+            {
+                "paper_id": paper_id,
+                "chunk_index": idx,
+                "text": text,
+                "updated_at": datetime.utcnow(),
+            },
+        )
+
+    batch.commit()
+
+
+def fetch_chunks(chunk_ids: List[str]) -> Dict[str, Dict]:
+    if not chunk_ids:
+        return {}
+
+    client = get_client()
+    collection = client.collection(config.CHUNKS_COLLECTION)
+    doc_refs = [collection.document(cid) for cid in chunk_ids]
+    documents = client.get_all(doc_refs)
+
+    found: Dict[str, Dict] = {}
+    for doc in documents:
+        if doc.exists:
+            found[doc.id] = doc.to_dict() or {}
+    return found

@@ -15,6 +15,7 @@ DEFAULT_TOP_K: int = int(os.getenv("DEFAULT_TOP_K", "5"))
 # Firestore collection names
 SESSIONS_COLLECTION = os.getenv("SESSIONS_COLLECTION", "sessions")
 SUMMARIES_COLLECTION = os.getenv("SUMMARIES_COLLECTION", "summaries")
+CHUNKS_COLLECTION = os.getenv("CHUNKS_COLLECTION", "paper_chunks")
 
 
 class SettingsError(Exception):

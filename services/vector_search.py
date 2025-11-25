@@ -19,7 +19,6 @@ def _get_endpoint() -> me_endpoint.MatchingEngineIndexEndpoint:
 def upsert_embeddings(
     paper_id: str,
     embeddings: List[list[float]],
-    metadatas: List[dict],
     *,
     deployed_index_id: Optional[str] = None,
 ) -> None:
@@ -29,13 +28,12 @@ def upsert_embeddings(
         raise config.SettingsError("VERTEX_DEPLOYED_INDEX_ID must be set for upserts.")
 
     datapoints = []
-    for i, (vector, metadata) in enumerate(zip(embeddings, metadatas)):
+    for i, vector in enumerate(embeddings):
         datapoints.append(
             aiplatform.MatchingEngineIndexDatapoint(
                 id=f"{paper_id}-{i}",
                 embedding=vector,
                 restricts=[{"namespace": "paper_id", "allow_tokens": [paper_id]}],
-                attributes=metadata,
             )
         )
     endpoint.upsert_datapoints(datapoints=datapoints, deployed_index_id=deployed)
@@ -70,13 +68,11 @@ def query(
     results = []
     for neighbor in neighbors[0].neighbors:
         datapoint = neighbor.datapoint
-        metadata = datapoint.restricts or []
-        attributes = getattr(datapoint, "attributes", {}) or {}
         results.append(
             {
                 "score": neighbor.distance,
-                "metadata": attributes,
-                "namespace_filters": metadata,
+                "id": getattr(datapoint, "datapoint_id", None) or datapoint.id,
+                "namespace_filters": datapoint.restricts or [],
             }
         )
     return results
