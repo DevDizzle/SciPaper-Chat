@@ -38,7 +38,7 @@ google-auth==2.43.0
     #   google-cloud-resource-manager
     #   google-cloud-storage
     #   google-genai
-google-cloud-aiplatform==1.71.1
+google-cloud-aiplatform==1.56.0
     # via -r requirements.in
 google-cloud-bigquery==3.38.0
     # via google-cloud-aiplatform
