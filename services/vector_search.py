@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import List, Optional
 
 from google.cloud import aiplatform
-from google.cloud import aiplatform
 
 import config
 
@@ -62,13 +61,22 @@ def query(
         num_neighbors=top_k,
         return_full_datapoint=True,
     )
+    
+    if not neighbors:
+        return []
+
     results = []
+    # Check if the first result has neighbors before iterating
+    if not neighbors[0].neighbors:
+        return []
+
     for neighbor in neighbors[0].neighbors:
         datapoint = neighbor.datapoint
         metadata = datapoint.restricts or []
         attributes = getattr(datapoint, "attributes", {}) or {}
         results.append(
             {
+                "id": datapoint.id,
                 "score": neighbor.distance,
                 "metadata": attributes,
                 "namespace_filters": metadata,
