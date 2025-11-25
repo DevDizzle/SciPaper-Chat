@@ -9,55 +9,25 @@ from services import storage, gcs
 from ingestion.pipeline import ingest_pdf
 from agents.adk_agent import PaperRAGAgent
 
-# The ID is derived from the filename provided
-PAPER_ID = "06cbe85c-a864-434c-b26e-fb7d2cc2cf71"
-PDF_FILENAME = f"{PAPER_ID}.pdf"
+# Use the existing _v4 ID since we are just testing a different query against the same index
+PAPER_ID = "06cbe85c-a864-434c-b26e-fb7d2cc2cf71_v4"
 
 def check_and_ingest():
     print(f"Checking status for Paper ID: {PAPER_ID}")
-
-    # 1. Check if already indexed by looking for the summary in Firestore
-    # This prevents duplicate embedding costs and index entries.
     summary = storage.fetch_summary(PAPER_ID)
     
     if summary:
         print(" [✓] Paper already indexed. Summary found.")
         print(f"     Summary excerpt: {summary[:100]}...")
+        return True
     else:
-        print(" [!] Paper not found in index. Starting ingestion...")
-        
-        # 2. Download from GCS since it's not in the index yet
-        print(f"     Downloading {PDF_FILENAME} from bucket {config.GCS_BUCKET}...")
-        try:
-            client = gcs.get_client()
-            bucket = client.bucket(config.GCS_BUCKET)
-            blob = bucket.blob(PDF_FILENAME)
-            
-            if not blob.exists():
-                print(f" [X] File {PDF_FILENAME} does not exist in bucket {config.GCS_BUCKET}.")
-                return False
-
-            pdf_bytes = blob.download_as_bytes()
-            print("     Download complete. File size:", len(pdf_bytes), "bytes")
-            
-            # 3. Run Ingestion Pipeline
-            print("     Ingesting PDF (Parsing -> Chunking -> Embedding -> Vector Search)...")
-            # ingest_pdf returns (paper_id, summary)
-            _, new_summary = ingest_pdf(pdf_bytes, paper_id=PAPER_ID)
-            
-            print(" [✓] Ingestion complete.")
-            print(f"     Generated Summary: {new_summary[:100]}...")
-            
-        except Exception as e:
-            print(f" [X] Error during ingestion: {e}")
-            return False
-            
-    return True
+        print(" [!] Paper not found. Please revert PAPER_ID to a fresh version if you need to re-ingest.")
+        return False
 
 def test_query():
     print("\nTesting Query Service...")
-    # A generic question that requires reading the content to answer
-    query_text = "What are the main contributions and findings of this paper?"
+    # [UPDATE] A specific question based on the summary to target the body text
+    query_text = "How does the Agentic Context Engineering (ACE) framework manage context?"
     print(f" Question: {query_text}")
     
     try:
