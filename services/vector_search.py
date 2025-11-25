@@ -4,12 +4,12 @@ from __future__ import annotations
 from typing import List, Optional
 
 from google.cloud import aiplatform
-from google.cloud.aiplatform.matching_engine import matching_engine_index_endpoint as me_endpoint
+from google.cloud import aiplatform
 
 import config
 
 
-def _get_endpoint() -> me_endpoint.MatchingEngineIndexEndpoint:
+def _get_endpoint() -> aiplatform.MatchingEngineIndexEndpoint:
     aiplatform.init(project=config.PROJECT_ID, location=config.REGION)
     if not config.VERTEX_INDEX_ENDPOINT_ID:
         raise config.SettingsError("VERTEX_INDEX_ENDPOINT_ID must be set for vector search.")
@@ -21,6 +21,7 @@ def upsert_embeddings(
     embeddings: List[list[float]],
     *,
     deployed_index_id: Optional[str] = None,
+    start_index: int = 0,
 ) -> None:
     endpoint = _get_endpoint()
     deployed = deployed_index_id or config.VERTEX_DEPLOYED_INDEX_ID
@@ -31,7 +32,7 @@ def upsert_embeddings(
     for i, vector in enumerate(embeddings):
         datapoints.append(
             aiplatform.MatchingEngineIndexDatapoint(
-                id=f"{paper_id}-{i}",
+                id=f"{paper_id}-{start_index + i}",
                 embedding=vector,
                 restricts=[{"namespace": "paper_id", "allow_tokens": [paper_id]}],
             )
@@ -51,28 +52,26 @@ def query(
     if not deployed:
         raise config.SettingsError("VERTEX_DEPLOYED_INDEX_ID must be set for queries.")
 
-    filters = []
+    categorical_filters = []
     if paper_id:
-        filters.append({"namespace": "paper_id", "allow_tokens": [paper_id]})
+        categorical_filters.append(aiplatform.matching_engine.matching_engine_index_endpoint.Namespace(name="paper_id", allow_tokens=[paper_id]))
 
     neighbors = endpoint.find_neighbors(
         deployed_index_id=deployed,
-        queries=[
-            aiplatform.matching_engine.matching_engine_index_endpoint.Query(
-                embedding=query_vector, restricts=filters
-            )
-        ],
+        queries=[query_vector],
         num_neighbors=top_k,
         return_full_datapoint=True,
     )
     results = []
     for neighbor in neighbors[0].neighbors:
         datapoint = neighbor.datapoint
+        metadata = datapoint.restricts or []
+        attributes = getattr(datapoint, "attributes", {}) or {}
         results.append(
             {
                 "score": neighbor.distance,
-                "id": getattr(datapoint, "datapoint_id", None) or datapoint.id,
-                "namespace_filters": datapoint.restricts or [],
+                "metadata": attributes,
+                "namespace_filters": metadata,
             }
         )
     return results

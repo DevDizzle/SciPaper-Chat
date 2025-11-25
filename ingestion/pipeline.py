@@ -50,13 +50,18 @@ def ingest_pdf(pdf_bytes: bytes, paper_id: Optional[str] = None) -> Tuple[str, s
     paper_identifier = paper_id or str(uuid.uuid4())
     text = _extract_text(pdf_bytes)
     chunks = _chunk_text(text)
-    embeddings = embedding.embed_texts(chunks)
+    
+    batch_size = 20
+    for i in range(0, len(chunks), batch_size):
+        batch_chunks = chunks[i:i+batch_size]
+        embeddings = embedding.embed_texts(batch_chunks)
+        vector_search.upsert_embeddings(
+            paper_identifier,
+            embeddings,
+            start_index=i,
+        )
 
     storage.persist_chunks(paper_identifier, chunks)
-    vector_search.upsert_embeddings(
-        paper_identifier,
-        embeddings,
-    )
 
     summary = _summarize(chunks)
     storage.persist_summary(paper_identifier, summary)
