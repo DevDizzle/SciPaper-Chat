@@ -47,13 +47,9 @@ class PaperRAGAgent:
             paper_id=paper_id,
             top_k=top_k,
         )
-        contexts: List[str] = []
-        for result in results:
-            metadata = result.get("metadata", {})
-            text = metadata.get("text") or metadata.get("chunk")
-            if text:
-                contexts.append(text)
-        return contexts
+        chunk_ids = [r["id"] for r in results if r.get("id")]
+        chunk_map = storage.fetch_chunks(chunk_ids)
+        return [chunk_map[cid]["text"] for cid in chunk_ids if cid in chunk_map]
 
     def answer_question(
         self, *, paper_id: str, session_id: Optional[str], question: str, top_k: int
