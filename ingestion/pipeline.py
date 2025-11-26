@@ -19,9 +19,12 @@ vertexai.init(project=config.PROJECT_ID, location=config.REGION)
 def _extract_text(pdf_bytes: bytes) -> str:
     reader = PdfReader(io.BytesIO(pdf_bytes))
     text = []
-    for page in reader.pages:
-        text.append(page.extract_text() or "")
-    full_text = "\n".join(text)
+    for i, page in enumerate(reader.pages):
+        # Add page delimiters to enable citation logic
+        page_text = page.extract_text() or ""
+        text.append(f"\n--- PAGE {i+1} ---\n{page_text}")
+    
+    full_text = "".join(text)
 
     # Strategy 1: Explicit Headers
     # Look for standalone headers in the last 40% of the document
@@ -41,7 +44,6 @@ def _extract_text(pdf_bytes: bytes) -> str:
 
     # Strategy 2: Fallback - Detect start of citation list
     # Look for "[1]" or "1. AuthorName" in the last 30% of the text
-    # This catches cases where the "References" header is merged with other text
     start_check = int(len(full_text) * 0.7)
     tail_text = full_text[start_check:]
     
@@ -70,13 +72,26 @@ def _summarize(chunks: List[str]) -> str:
     if not chunks:
         return ""
     model = GenerativeModel(config.GENERATION_MODEL)
+    
+    # Updated prompt to match the "Analyzer" style output
     prompt = (
-        "You are summarizing a scientific paper for researchers. "
-        "Provide a concise summary that captures main contributions and methods."
+        "You are a scientific paper analyzer. "
+        "Generate a structured summary of the following paper content. "
+        "Use the following format:\n\n"
+        "**Running Summary:**\n<A concise technical summary of the paper>\n\n"
+        "**Key Findings:**\n- <Point 1>\n- <Point 2>\n- <Point 3>\n\n"
+        "**Loose Ends / Future Work:**\n- <Open question or future direction 1>\n- <Open question or future direction 2>"
     )
+    
+    # Use first 5 chunks for summary generation to capture intro/methods/results
     parts = [Part.from_text(prompt)] + [Part.from_text(chunk[:2000]) for chunk in chunks[:5]]
-    response = model.generate_content(parts)
-    return response.text if hasattr(response, "text") else str(response)
+    
+    try:
+        response = model.generate_content(parts)
+        return response.text if hasattr(response, "text") else str(response)
+    except Exception as e:
+        print(f" [X] Error generating summary: {e}")
+        return "Summary could not be generated."
 
 
 def ingest_pdf(pdf_bytes: bytes, paper_id: Optional[str] = None) -> Tuple[str, str]:
