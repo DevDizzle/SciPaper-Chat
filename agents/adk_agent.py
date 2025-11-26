@@ -17,9 +17,16 @@ def _init_vertex() -> None:
 def build_prompt(question: str, contexts: List[str], history: List[str]) -> str:
     context_block = "\n\n".join(contexts) if contexts else "No context retrieved."
     history_block = "\n".join(history)
+    
     return f"""
-You are an assistant answering questions about a single scientific paper.
-Use only the provided context and history. If the answer is not present, say you don't know.
+You are an expert scientific assistant answering questions about a specific paper.
+Use ONLY the provided context to answer. 
+
+**Citation Rule:**
+The context contains page markers (e.g., "--- PAGE 2 ---"). 
+You MUST cite your claims by referencing the page number found near the information.
+Format citations as [Page X].
+Example: "The method uses hierarchical reinforcement learning [Page 4]."
 
 Context:
 {context_block}
@@ -29,7 +36,7 @@ Conversation history:
 
 Question: {question}
 
-Respond concisely for a technical reader and avoid speculation.
+Respond concisely for a technical reader. If the answer is not in the context, say you don't know.
 """
 
 
