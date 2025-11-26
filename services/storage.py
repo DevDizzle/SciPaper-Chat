@@ -9,6 +9,7 @@ from google.cloud import firestore
 import config
 
 _db: firestore.Client | None = None
+USERS_COLLECTION = "users"
 
 
 def get_client() -> firestore.Client:
@@ -64,13 +65,7 @@ def fetch_summary(paper_id: str) -> Optional[str]:
 
 
 def persist_chunks(paper_id: str, chunks: List[str]) -> None:
-    """Persist chunk text in Firestore keyed by vector ID.
-
-    Uses a dedicated collection where each document ID matches the vector search
-    datapoint ID (`{paper_id}-{chunk_index}`) so retrieval can map directly from
-    Vector Search results.
-    """
-
+    """Persist chunk text in Firestore keyed by vector ID."""
     if not paper_id or not chunks:
         return
 
@@ -108,3 +103,32 @@ def fetch_chunks(chunk_ids: List[str]) -> Dict[str, Dict]:
         if doc.exists:
             found[doc.id] = doc.to_dict() or {}
     return found
+
+
+# --- NEW: User Management for Demo ---
+
+def create_user(username: str, role: str) -> bool:
+    """Registers a new user for the demo."""
+    if not username:
+        return False
+    
+    # Check if user exists using the username as the document ID
+    doc_ref = get_client().collection(USERS_COLLECTION).document(username)
+    if doc_ref.get().exists:
+        return False 
+        
+    doc_ref.set({
+        "username": username,
+        "role": role,
+        "joined_at": datetime.utcnow()
+    })
+    return True
+
+
+def list_users() -> List[Dict]:
+    """Fetches all users for the Admin dashboard."""
+    users_ref = get_client().collection(USERS_COLLECTION).stream()
+    users = []
+    for doc in users_ref:
+        users.append(doc.to_dict())
+    return users
