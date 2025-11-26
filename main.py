@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agents.adk_agent import PaperRAGAgent
 import config
 from ingestion.pipeline import ingest_pdf
-from models.api import QueryRequest, QueryResponse, SummaryResponse, UploadResponse
+from models.api import QueryRequest, QueryResponse, SummaryResponse, UploadResponse, UserRequest
 from services import gcs, storage
 
 app = FastAPI(
@@ -18,7 +18,7 @@ app = FastAPI(
     description=(
         "Ingest PDFs, index them in Vertex AI Vector Search, and answer questions via Gemini."
     ),
-    version="2.0.0",
+    version="2.1.0",
 )
 
 app.add_middleware(
@@ -76,6 +76,22 @@ async def get_summary(paper_id: str) -> SummaryResponse:
     if summary is None:
         raise HTTPException(status_code=404, detail="Summary not found")
     return SummaryResponse(paper_id=paper_id, summary=summary)
+
+
+# --- NEW: User Management Endpoints ---
+
+@app.post("/users", tags=["admin"])
+async def create_user(request: UserRequest):
+    success = await run_in_threadpool(storage.create_user, request.username, request.role)
+    if not success:
+        raise HTTPException(status_code=400, detail="User already exists or invalid data.")
+    return {"status": "created", "username": request.username}
+
+
+@app.get("/users", tags=["admin"])
+async def list_users():
+    users = await run_in_threadpool(storage.list_users)
+    return {"users": users, "count": len(users)}
 
 
 if __name__ == "__main__":
