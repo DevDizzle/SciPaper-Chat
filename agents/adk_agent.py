@@ -1,7 +1,7 @@
 """ADK-style agent that orchestrates retrieval and grounded generation."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
@@ -14,19 +14,28 @@ def _init_vertex() -> None:
     vertexai.init(project=config.PROJECT_ID, location=config.REGION)
 
 
-def build_prompt(question: str, contexts: List[str], history: List[str]) -> str:
-    context_block = "\n\n".join(contexts) if contexts else "No context retrieved."
+def build_prompt(question: str, contexts: List[Dict[str, str]], history: List[str]) -> str:
+    """Builds a prompt with context from multiple papers and new citation rules."""
+    if contexts:
+        context_parts = []
+        for chunk in contexts:
+            # The chunk dict from Firestore contains 'paper_id' and 'text'
+            context_parts.append(f"--- CONTEXT from paper {chunk.get('paper_id', 'unknown')} ---\n{chunk.get('text', '')}")
+        context_block = "\n\n".join(context_parts)
+    else:
+        context_block = "No context retrieved."
+
     history_block = "\n".join(history)
-    
+
     return f"""
-You are an expert scientific assistant answering questions about a specific paper.
-Use ONLY the provided context to answer. 
+You are an expert scientific assistant answering questions about a collection of papers.
+Use ONLY the provided context to answer.
 
 **Citation Rule:**
-The context contains page markers (e.g., "--- PAGE 2 ---"). 
-You MUST cite your claims by referencing the page number found near the information.
-Format citations as [Page X].
-Example: "The method uses hierarchical reinforcement learning [Page 4]."
+The context is sourced from multiple papers, identified by their arXiv ID.
+You MUST cite your claims by referencing the paper ID found with the information.
+Format citations as [from <paper_id>].
+Example: "The study found that Bayes error could be optimized [from 2305.10601v1]."
 
 Context:
 {context_block}
@@ -47,22 +56,24 @@ class PaperRAGAgent:
         _init_vertex()
         self.model = GenerativeModel(config.GENERATION_MODEL)
 
-    def _search(self, question: str, paper_id: str, top_k: int) -> List[str]:
+    def _search(self, question: str, paper_ids: list[str], top_k: int) -> List[Dict[str, str]]:
+        """Search across multiple paper IDs and return chunk metadata."""
         query_embedding = embedding.embed_texts([question])[0]
         results = vector_search.query(
             query_vector=query_embedding,
-            paper_id=paper_id,
+            paper_ids=paper_ids,
             top_k=top_k,
         )
         chunk_ids = [r["id"] for r in results if r.get("id")]
         chunk_map = storage.fetch_chunks(chunk_ids)
-        return [chunk_map[cid]["text"] for cid in chunk_ids if cid in chunk_map]
+        # Return the full chunk dictionary, which includes the source paper_id
+        return [chunk_map[cid] for cid in chunk_ids if cid in chunk_map]
 
     def answer_question(
-        self, *, paper_id: str, session_id: Optional[str], question: str, top_k: int
+        self, *, paper_ids: list[str], session_id: Optional[str], question: str, top_k: int
     ) -> str:
         history = storage.load_chat_history(session_id)
-        contexts = self._search(question, paper_id, top_k)
+        contexts = self._search(question, paper_ids, top_k)
         prompt = build_prompt(question, contexts, history)
 
         response = self.model.generate_content([Part.from_text(prompt)])

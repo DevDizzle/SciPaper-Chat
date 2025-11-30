@@ -58,7 +58,7 @@ def upsert_embeddings(
 def query(
     *,
     query_vector: list[float],
-    paper_id: Optional[str],
+    paper_ids: list[str],
     top_k: int,
     deployed_index_id: Optional[str] = None,
 ) -> List[dict]:
@@ -72,8 +72,8 @@ def query(
     from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import Namespace
 
     categorical_filters = []
-    if paper_id:
-        categorical_filters.append(Namespace(name="paper_id", allow_tokens=[paper_id]))
+    if paper_ids:
+        categorical_filters.append(Namespace(name="paper_id", allow_tokens=paper_ids))
 
     # find_neighbors returns a list of lists (one per query)
     neighbors_list = endpoint.find_neighbors(

@@ -16,7 +16,7 @@ class UploadResponse(BaseModel):
 
 
 class QueryRequest(BaseModel):
-    paper_id: str = Field(..., description="Identifier used during ingestion")
+    paper_ids: list[str] = Field(..., description="List of identifiers for papers to search across")
     session_id: Optional[str] = Field(
         default=None, description="Session identifier for chat continuity"
     )
@@ -31,3 +31,17 @@ class QueryResponse(BaseModel):
 class SummaryResponse(BaseModel):
     paper_id: str
     summary: str
+
+
+class UserRequest(BaseModel):
+    username: str
+    role: str = "student"
+
+
+class AnalyzeUrlsRequest(BaseModel):
+    urls: list[str] = Field(..., description="List of arXiv URLs to analyze and use as seeds")
+
+
+class AnalyzeUrlsResponse(BaseModel):
+    session_paper_ids: list[str] = Field(..., description="List of all paper IDs (arXiv IDs) ingested for this session")
+    summary: str = Field(..., description="A consolidated summary of the initial seed papers")

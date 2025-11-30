@@ -10,6 +10,7 @@ GCS_BUCKET: Optional[str] = os.getenv("GCS_BUCKET")
 VERTEX_INDEX_ID: Optional[str] = os.getenv("VERTEX_INDEX_ID")
 VERTEX_INDEX_ENDPOINT_ID: Optional[str] = os.getenv("VERTEX_INDEX_ENDPOINT_ID")
 VERTEX_DEPLOYED_INDEX_ID: Optional[str] = os.getenv("VERTEX_DEPLOYED_INDEX_ID")
+PAPERREC_SEARCH_URL: Optional[str] = os.getenv("PAPERREC_SEARCH_URL")
 DEFAULT_TOP_K: int = int(os.getenv("DEFAULT_TOP_K", "5"))
 
 # Firestore collection names

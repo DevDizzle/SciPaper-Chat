@@ -27,6 +27,8 @@ if "current_paper_id" not in st.session_state:
     st.session_state.current_paper_id = None
 if "current_summary" not in st.session_state:
     st.session_state.current_summary = None
+if "session_paper_ids" not in st.session_state:
+    st.session_state.session_paper_ids = []
 
 # --- AUTH / LOGIN SCREEN ---
 def login_screen():
@@ -71,25 +73,40 @@ def student_view():
 
     st.title("📄 Scientific Paper Analyzer")
     
-    # 1. Upload Section
-    with st.expander("📤 Upload Paper", expanded=(st.session_state.current_paper_id is None)):
-        uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
-        if uploaded_file and st.button("Analyze Paper"):
-            with st.spinner("Ingesting & Vectorizing..."):
-                try:
-                    files = {"file": (uploaded_file.name, uploaded_file, "application/pdf")}
-                    # Pass paper_id in query if you want specific IDs, or let backend generate
-                    response = requests.post(f"{API_URL}/upload", files=files)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        st.session_state.current_paper_id = data["paper_id"]
-                        st.session_state.current_summary = data["summary"]
-                        st.success("Analysis Complete")
-                    else:
-                        st.error(f"Error: {response.text}")
-                except Exception as e:
-                    st.error(f"Connection Error: {e}")
+    # 1. Ingest Papers Section
+    with st.expander("📤 Add Papers via arXiv URL", expanded=(st.session_state.current_paper_id is None)):
+        arxiv_urls_text = st.text_area(
+            "Enter up to 10 arXiv URLs (one per line):",
+            height=250,
+            placeholder="e.g., https://arxiv.org/abs/1706.03762\nhttps://arxiv.org/abs/2305.10601",
+        )
+        if st.button("Analyze Papers"):
+            urls = [url.strip() for url in arxiv_urls_text.split("\n") if "arxiv.org" in url]
+            if not urls:
+                st.warning("Please enter at least one valid arXiv URL.")
+            elif len(urls) > 10:
+                st.warning("Please provide a maximum of 10 URLs.")
+            else:
+                with st.spinner("Analyzing papers and expanding knowledge base... This may take a few minutes."):
+                    try:
+                        payload = {"urls": urls}
+                        response = requests.post(f"{API_URL}/analyze_urls", json=payload)
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            # Store all paper IDs for the session
+                            st.session_state.session_paper_ids = data["session_paper_ids"]
+                            st.session_state.current_summary = data["summary"]
+                            st.success("Analysis Complete!")
+                            
+                            # Set a current_paper_id for the Q&A box to be functional in the interim.
+                            # The Q&A logic will be updated later to use the full list.
+                            if data["session_paper_ids"]:
+                                st.session_state.current_paper_id = data["session_paper_ids"][0]
+                        else:
+                            st.error(f"Error during analysis: {response.text}")
+                    except Exception as e:
+                        st.error(f"Connection Error: {e}")
 
     # 2. Summary Section
     if st.session_state.current_summary:
@@ -105,9 +122,9 @@ def student_view():
             st.markdown(message["content"])
 
     # Input
-    if prompt := st.chat_input("Ask a question about the paper..."):
-        if not st.session_state.current_paper_id:
-            st.error("Please upload a paper first.")
+    if prompt := st.chat_input("Ask a question about the collection of papers..."):
+        if not st.session_state.session_paper_ids:
+            st.error("Please analyze a collection of papers first.")
             return
 
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -119,7 +136,7 @@ def student_view():
             placeholder.markdown("Thinking...")
             try:
                 payload = {
-                    "paper_id": st.session_state.current_paper_id,
+                    "paper_ids": st.session_state.session_paper_ids,
                     "session_id": st.session_state.session_id,
                     "question": prompt
                 }
