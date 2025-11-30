@@ -45,9 +45,10 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+import asyncio
 import logging
 import uuid
-from typing import Any, Coroutine
+from typing import Any
 
 import requests
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -139,7 +140,7 @@ async def analyze_urls(request: AnalyzeUrlsRequest) -> AnalyzeUrlsResponse:
                 papers_to_process[arxiv_id]["id"] = arxiv_id # Ensure ID is in metadata
 
     # --- 2. Full-Text Ingestion ---
-    ingestion_tasks: list[Coroutine] = []
+    ingestion_tasks = []
     for arxiv_id, paper_meta in papers_to_process.items():
         pdf_url = paper_meta.get("link_pdf")
         if not pdf_url:
@@ -152,8 +153,8 @@ async def analyze_urls(request: AnalyzeUrlsRequest) -> AnalyzeUrlsResponse:
             task = run_in_threadpool(ingest_pdf, pdf_bytes, arxiv_id)
             ingestion_tasks.append(task)
 
-    # Run all ingestion tasks
-    await Coroutine.gather(*ingestion_tasks)
+    # Run all ingestion tasks concurrently
+    await asyncio.gather(*ingestion_tasks)
 
     # --- 3. Consolidated Summarization ---
     # Fetch chunks only for the initial set of papers
