@@ -4,7 +4,6 @@ import uuid
 import json
 import pandas as pd
 from datetime import datetime
-import traceback
 
 # --- CONFIGURATION ---
 # Try to get the URL from Streamlit Secrets, otherwise default to your specific Cloud Run URL
@@ -102,8 +101,7 @@ def student_view():
                         else:
                             st.error(f"Error during analysis: {response.status_code} - {response.text}")
                     except Exception as e:
-                        st.error(f"An unexpected error occurred: {e}")
-                        st.code(traceback.format_exc())
+                        st.error(f"Connection Error: {e}")
 
     # 2. Summary Section
     if st.session_state.summaries:

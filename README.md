@@ -1,58 +1,52 @@
 # Scientific Paper Analyzer
 
-FastAPI + Uvicorn service for ingesting scientific PDFs, indexing them with **Vertex AI Vector Search**, and answering grounded questions with **Gemini** via a lightweight **Google ADK–style agent**. Deployed to Cloud Run with Google-managed services for storage, embeddings, and retrieval.
+A FastAPI + Uvicorn service for analyzing collections of scientific papers. The system accepts a list of arXiv URLs, expands the collection with related papers using a similarity search service, and provides multi-document Retrieval-Augmented Generation (RAG) capabilities using **Vertex AI Vector Search** and **Gemini**.
 
-## Architecture
-- **Ingestion**: PDF upload → pypdf parsing → chunking → Vertex AI embeddings → upsert to Vertex AI Vector Search using only IDs + restricts.
-- **Retrieval QA**: Paper-specific queries fetch relevant chunk IDs from Vector Search, load chunk text from Firestore, and Gemini generates grounded answers.
-- **State**: Firestore stores chat history, chunk text, and running summaries.
-- **Storage**: Raw PDFs live in Cloud Storage; summaries and chunk documents are persisted in Firestore.
+## Architecture & Workflow
 
-### Key components
-- `ingestion/pipeline.py` — PDF → chunks → embeddings → Vector Search upsert + Firestore chunk persistence + summary generation.
-- `agents/adk_agent.py` — ADK-style agent that retrieves chunk IDs from Vector Search, fetches text from Firestore, and calls Gemini.
-- `services/embedding.py` — Vertex AI text embedding helper.
-- `services/vector_search.py` — Vertex AI Vector Search upsert/query helpers.
-- `services/storage.py` — Firestore-backed summaries, chunk text, and chat history.
-- `main.py` — FastAPI entrypoint exposing upload, query, and summary endpoints.
+The system operates in a multi-stage process to build a knowledge base and answer questions.
 
-## API overview
-- `GET /health` — liveness probe.
-- `POST /upload` — upload a PDF file; ingests and indexes the paper and returns `paper_id` + initial summary.
-- `POST /query` — JSON `{ "paper_id", "session_id", "question", "top_k" }`; runs retrieval + Gemini response.
-- `GET /summary/{paper_id}` — fetch the latest stored summary for a paper.
+1.  **URL Submission**: The user submits a list of 1-10 public arXiv URLs.
+2.  **Corpus Expansion**: For each submitted URL, the system queries an external similarity search service (`paperrec-search`) to find the top 5 related papers. This creates an expanded knowledge base for the session.
+3.  **Ingestion**: The system downloads the PDF for every paper (both initial and similar), chunks the text, generates embeddings with Vertex AI, and upserts them into Vertex AI Vector Search. Each paper is indexed under its unique arXiv ID.
+4.  **Summarization**: The system generates a running summary for each of the initial papers submitted by the user.
+5.  **Multi-Document Q&A**: The user can ask questions against the entire collection of papers. The system retrieves relevant text chunks from across the whole corpus, constructs a grounded prompt, and uses the Gemini model to generate an answer with citations to the source papers.
 
-## Running locally
+### Key Components
+- `main.py`: FastAPI entrypoint exposing the `/analyze_urls` and `/query` endpoints.
+- `ingestion/pipeline.py`: Orchestrates PDF parsing, chunking, embedding, and indexing into Vertex AI Vector Search.
+- `agents/adk_agent.py`: An ADK-style agent that retrieves context from multiple documents and calls Gemini to generate grounded, cited answers.
+- `services/vector_search.py`: Wraps the Vertex AI Vector Search client to query across multiple paper IDs.
+- `services/storage.py`: Firestore-backed storage for chat history, text chunks, and summaries.
+
+## API Overview
+- `GET /health`: Liveness probe.
+- `POST /analyze_urls`: The primary endpoint. Accepts a JSON list of arXiv URLs (`{ "urls": ["...", "..."] }`). It orchestrates the entire ingestion and summarization workflow and returns a list of all processed paper IDs and the summaries for the initial papers.
+- `POST /query`: Accepts a JSON payload with a list of paper IDs to search across, a session ID for history, and the user's question (`{ "paper_ids": ["...", "..."], "question": "..." }`).
+- `GET /summary/{paper_id}`: Fetches the stored summary for one of the initial papers.
+- `POST /upload`: A legacy endpoint for uploading a single PDF file directly.
+
+## Running Locally
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8080
 ```
-
 Authentication uses Application Default Credentials for Firestore, Vertex AI, and Cloud Storage.
 
 ## Deployment (Cloud Run)
-1. Ensure `requirements.txt` is regenerated from `requirements.in` with `pip-compile` after dependency changes.
-2. Build and push the container image (Cloud Build or `docker build`).
-3. Deploy to Cloud Run with environment variables:
-   - `PROJECT_ID`, `REGION`
-   - `GCS_BUCKET`
-   - `VERTEX_INDEX_ENDPOINT_ID`, `VERTEX_DEPLOYED_INDEX_ID`
-   - Optional: `EMBEDDING_MODEL`, `GENERATION_MODEL`, `DEFAULT_TOP_K`
-4. Verify health at `/health`, then ingest a test PDF via `/upload` and query via `/query`.
-
-## GCP-native RAG flow
-1. **Upload**: PDF stored in GCS (optional) and parsed with pypdf.
-2. **Chunk**: Simple character-based chunking with overlap for better context recall.
-3. **Embed**: `text-embedding-004` (configurable) via Vertex AI.
-4. **Index**: Upsert embeddings into Vertex AI Vector Search using `paper_id` namespace filters; only the datapoint ID and restricts are stored alongside the vector.
-5. **Answer**: ADK-style agent retrieves top-k chunks, builds a grounded prompt, and calls Gemini (`gemini-1.5-flash-001` by default).
-
-## Ingestion pipeline (local smoke test)
-- POST `/upload` with a small PDF; confirms pypdf parsing, embedding calls, and Vector Search upserts.
-- Use the returned `paper_id` with `/query` to validate retrieval + grounding.
+1.  Ensure `requirements.txt` is up-to-date.
+2.  Build and push the container image using Google Cloud Build:
+    ```bash
+    gcloud builds submit SciPaper-Chat --tag gcr.io/your-project-id/scipaper-analyzer
+    ```
+3.  Deploy to Cloud Run with the necessary environment variables:
+    ```bash
+    bash SciPaper-Chat/deploy.sh
+    ```
+4.  Verify the service is running by checking the `/health` endpoint.
 
 ## Notes
-- LangChain and FAISS have been removed in favor of Vertex AI + Google client libraries to avoid resolver conflicts and align with GCP-native services.
-- The service is backend-only; front-ends should call the HTTP API.
+- The service is backend-only; a separate frontend should be used to interact with the API.
+- The project is designed to be GCP-native, leveraging managed services for scalability and reliability.

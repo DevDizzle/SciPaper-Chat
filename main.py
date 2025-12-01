@@ -83,27 +83,39 @@ async def analyze_urls(request: AnalyzeUrlsRequest) -> AnalyzeUrlsResponse:
     if not initial_urls:
         raise HTTPException(status_code=400, detail="No URLs provided.")
 
-    # --- 1. Corpus Expansion ---
     papers_to_process: dict[str, dict] = {}
     initial_paper_canonical_ids: list[str] = []
 
-    # Add initial papers and find similar ones
+    # --- 1. Corpus Expansion ---
     for url in initial_urls:
-        # The paperrec-search service returns metadata for the query paper itself as the first result
+        # --- Process Initial Paper ---
+        try:
+            # Extract arXiv ID from URL (e.g., '2501.14342')
+            arxiv_id = url.split('/abs/')[-1]
+            if not arxiv_id:
+                continue
+            
+            initial_paper_canonical_ids.append(arxiv_id)
+            
+            if arxiv_id not in papers_to_process:
+                # Construct metadata for the initial paper
+                pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                papers_to_process[arxiv_id] = {
+                    "id": arxiv_id,
+                    "link_pdf": pdf_url,
+                    "title": f"Initial paper {arxiv_id}", # Placeholder title
+                }
+        except Exception as e:
+            logging.error(f"Failed to process initial URL {url}: {e}")
+            continue
+
+        # --- Find and Process Similar Papers ---
         similar_papers = await run_in_threadpool(_get_similar_papers, url)
-
-        # Capture the canonical ID of the initial paper from the search result
-        if similar_papers:
-            initial_paper_id = similar_papers[0].get("id")
-            if initial_paper_id:
-                initial_paper_canonical_ids.append(initial_paper_id)
-
         for paper in similar_papers:
-            # Use arxiv_id (e.g., '2401.08406v1') as the unique key
-            arxiv_id = paper.get("id")
-            if arxiv_id and arxiv_id not in papers_to_process:
-                papers_to_process[arxiv_id] = paper.get("metadata", {})
-                papers_to_process[arxiv_id]["id"] = arxiv_id  # Ensure ID is in metadata
+            similar_arxiv_id = paper.get("id")
+            if similar_arxiv_id and similar_arxiv_id not in papers_to_process:
+                papers_to_process[similar_arxiv_id] = paper.get("metadata", {})
+                papers_to_process[similar_arxiv_id]["id"] = similar_arxiv_id
 
     # --- 2. Full-Text Ingestion ---
     ingestion_tasks = []
