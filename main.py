@@ -1,50 +1,6 @@
 """FastAPI entrypoint for the SciPaper Analyzer service."""
 from __future__ import annotations
 
-import uuid
-
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.concurrency import run_in_threadpool
-from fastapi.middleware.cors import CORSMiddleware
-
-from agents.adk_agent import PaperRAGAgent
-import config
-from ingestion.pipeline import ingest_pdf
-from models.api import (
-    AnalyzeUrlsRequest,
-    AnalyzeUrlsResponse,
-    QueryRequest,
-    QueryResponse,
-    SummaryResponse,
-    UploadResponse,
-    UserRequest,
-)
-from services import gcs, storage
-
-app = FastAPI(
-    title="SciPaper Analyzer API",
-    description=(
-        "Ingest PDFs, index them in Vertex AI Vector Search, and answer questions via Gemini."
-    ),
-    version="2.1.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-agent = PaperRAGAgent()
-
-
-@app.get("/health", tags=["system"])
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
 import asyncio
 import logging
 import uuid
@@ -99,7 +55,9 @@ def _get_similar_papers(url: str) -> list[dict[str, Any]]:
         logging.warning("PAPERREC_SEARCH_URL is not set. Skipping similarity search.")
         return []
     try:
-        response = requests.post(config.PAPERREC_SEARCH_URL, json={"url": url, "k": 5})
+        # Ensure the URL ends with /search
+        search_url = config.PAPERREC_SEARCH_URL.rstrip('/') + "/search"
+        response = requests.post(search_url, json={"url": url, "k": 5})
         response.raise_for_status()
         return response.json().get("neighbors", [])
     except requests.RequestException as e:
@@ -127,17 +85,25 @@ async def analyze_urls(request: AnalyzeUrlsRequest) -> AnalyzeUrlsResponse:
 
     # --- 1. Corpus Expansion ---
     papers_to_process: dict[str, dict] = {}
+    initial_paper_canonical_ids: list[str] = []
 
     # Add initial papers and find similar ones
     for url in initial_urls:
         # The paperrec-search service returns metadata for the query paper itself as the first result
         similar_papers = await run_in_threadpool(_get_similar_papers, url)
+
+        # Capture the canonical ID of the initial paper from the search result
+        if similar_papers:
+            initial_paper_id = similar_papers[0].get("id")
+            if initial_paper_id:
+                initial_paper_canonical_ids.append(initial_paper_id)
+
         for paper in similar_papers:
             # Use arxiv_id (e.g., '2401.08406v1') as the unique key
             arxiv_id = paper.get("id")
             if arxiv_id and arxiv_id not in papers_to_process:
                 papers_to_process[arxiv_id] = paper.get("metadata", {})
-                papers_to_process[arxiv_id]["id"] = arxiv_id # Ensure ID is in metadata
+                papers_to_process[arxiv_id]["id"] = arxiv_id  # Ensure ID is in metadata
 
     # --- 2. Full-Text Ingestion ---
     ingestion_tasks = []
@@ -156,31 +122,29 @@ async def analyze_urls(request: AnalyzeUrlsRequest) -> AnalyzeUrlsResponse:
     # Run all ingestion tasks concurrently
     await asyncio.gather(*ingestion_tasks)
 
-    # --- 3. Consolidated Summarization ---
-    # Fetch chunks only for the initial set of papers
-    initial_paper_ids = [url.split("/")[-1] for url in initial_urls]
-    all_chunks = []
-    for paper_id in initial_paper_ids:
-        # This assumes a way to get all chunks for a paper_id.
-        # A new function in storage.py might be needed for efficiency.
-        # For now, we can't easily get all chunks, so we'll generate a placeholder summary.
-        # To implement this properly, we would need:
-        # chunks = await run_in_threadpool(storage.fetch_all_chunks_for_paper, paper_id)
-        # all_chunks.extend(chunks)
-        pass # Placeholder for chunk fetching
+    # --- 3. Individual Summarization ---
+    summaries: dict[str, str] = {}
+    unique_initial_ids = sorted(list(set(initial_paper_canonical_ids)))
 
-    summary = "[Summary generation for multiple papers is pending a chunk retrieval function]"
-    if not all_chunks:
-        # As a fallback, we generate a summary of the first paper's abstract if available
-        first_id = initial_paper_ids[0]
-        if first_id in papers_to_process:
-             summary_text = papers_to_process[first_id].get("abstract", "")
-             summary = await run_in_threadpool(_summarize, [summary_text])
+    for paper_id in unique_initial_ids:
+        summary_text = f"Could not generate a summary for paper {paper_id}."
+        chunks = await run_in_threadpool(
+            storage.fetch_chunks_for_papers, [paper_id]
+        )
 
+        if chunks:
+            summary_text = await run_in_threadpool(_summarize, chunks)
+        elif paper_id in papers_to_process:
+            # Fallback to abstract if chunks are not found
+            abstract = papers_to_process[paper_id].get("abstract", "")
+            if abstract:
+                summary_text = await run_in_threadpool(_summarize, [abstract])
+        
+        summaries[paper_id] = summary_text
 
     return AnalyzeUrlsResponse(
         session_paper_ids=list(papers_to_process.keys()),
-        summary=summary,
+        summaries=summaries,
     )
 
 

@@ -1,53 +1,65 @@
-import os
-import sys
+import requests
+import json
 
-# Ensure we can import from the current directory
-sys.path.append(os.getcwd())
+# The production URL for the scipaper-analyzer service
+API_URL = "https://scipaper-analyzer-550651297425.us-central1.run.app"
+ANALYZE_URL = f"{API_URL}/analyze_urls"
 
-import config
-from services import storage, gcs
-from ingestion.pipeline import ingest_pdf
-from agents.adk_agent import PaperRAGAgent
+# The list of arXiv URLs provided by the user
+ARXIV_URLS = [
+    "https://arxiv.org/abs/2504.07139",
+    "https://arxiv.org/abs/2508.11957",
+    "https://arxiv.org/abs/2508.13678",
+    "https://arxiv.org/abs/2511.09378",
+    "https://arxiv.org/abs/2508.07407",
+]
 
-# Use the existing _v4 ID since we are just testing a different query against the same index
-PAPER_ID = "06cbe85c-a864-434c-b26e-fb7d2cc2cf71_v4"
+def test_production_summarization():
+    """
+    Tests the production /analyze_urls endpoint to diagnose the summarization issue.
+    """
+    print(f"--- Testing Production Endpoint: {ANALYZE_URL} ---")
+    print(f"Sending {len(ARXIV_URLS)} URLs for analysis...")
 
-def check_and_ingest():
-    print(f"Checking status for Paper ID: {PAPER_ID}")
-    summary = storage.fetch_summary(PAPER_ID)
-    
-    if summary:
-        print(" [✓] Paper already indexed. Summary found.")
-        print(f"     Summary excerpt: {summary[:100]}...")
-        return True
-    else:
-        print(" [!] Paper not found. Please revert PAPER_ID to a fresh version if you need to re-ingest.")
-        return False
-
-def test_query():
-    print("\nTesting Query Service...")
-    # [UPDATE] A specific question based on the summary to target the body text
-    query_text = "How does the Agentic Context Engineering (ACE) framework manage context?"
-    print(f" Question: {query_text}")
-    
     try:
-        agent = PaperRAGAgent()
+        # Make the POST request to the production service
+        payload = {"urls": ARXIV_URLS}
+        response = requests.post(ANALYZE_URL, json=payload, timeout=600)  # 10 minute timeout
+
+        # Print the raw response details
+        print(f"\n--- Response ---")
+        print(f"Status Code: {response.status_code}")
+        print("Headers:")
+        for key, value in response.headers.items():
+            print(f"  {key}: {value}")
         
-        # 4. Call the agent
-        response = agent.answer_question(
-            paper_id=PAPER_ID,
-            session_id="smoke-test-session",
-            question=query_text,
-            top_k=config.DEFAULT_TOP_K
-        )
-        
-        print(" [✓] Response received:")
-        print("-" * 60)
-        print(response)
-        print("-" * 60)
-    except Exception as e:
-        print(f" [X] Error during query: {e}")
+        # Try to parse and print the JSON body
+        try:
+            response_json = response.json()
+            print("\nResponse Body (JSON):")
+            print(json.dumps(response_json, indent=2))
+
+            # Check for the 'summaries' key
+            if "summaries" in response_json:
+                print("\n[✓] 'summaries' key found in the response.")
+                summaries = response_json["summaries"]
+                if summaries:
+                    print("\n--- Summaries ---")
+                    for paper_id, summary in summaries.items():
+                        print(f"  - {paper_id}:")
+                        print(f"    {summary[:200]}...")
+                else:
+                    print("\n[!] The 'summaries' dictionary is empty.")
+            else:
+                print("\n[X] FATAL: 'summaries' key NOT found in the response body.")
+
+        except json.JSONDecodeError:
+            print("\n[X] FATAL: Failed to decode JSON from response body.")
+            print("Raw Response Body (Text):")
+            print(response.text)
+
+    except requests.exceptions.RequestException as e:
+        print(f"\n[X] FATAL: A request exception occurred: {e}")
 
 if __name__ == "__main__":
-    if check_and_ingest():
-        test_query()
+    test_production_summarization()

@@ -43,5 +43,9 @@ class AnalyzeUrlsRequest(BaseModel):
 
 
 class AnalyzeUrlsResponse(BaseModel):
-    session_paper_ids: list[str] = Field(..., description="List of all paper IDs (arXiv IDs) ingested for this session")
-    summary: str = Field(..., description="A consolidated summary of the initial seed papers")
+    session_paper_ids: list[str] = Field(
+        ..., description="List of all paper IDs (arXiv IDs) ingested for this session"
+    )
+    summaries: dict[str, str] = Field(
+        ..., description="A dictionary mapping initial paper IDs to their summaries"
+    )

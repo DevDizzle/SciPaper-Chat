@@ -4,6 +4,7 @@ import uuid
 import json
 import pandas as pd
 from datetime import datetime
+import traceback
 
 # --- CONFIGURATION ---
 # Try to get the URL from Streamlit Secrets, otherwise default to your specific Cloud Run URL
@@ -23,10 +24,8 @@ if "user" not in st.session_state:
     st.session_state.user = None # Tracks logged in user
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "current_paper_id" not in st.session_state:
-    st.session_state.current_paper_id = None
-if "current_summary" not in st.session_state:
-    st.session_state.current_summary = None
+if "summaries" not in st.session_state:
+    st.session_state.summaries = {}
 if "session_paper_ids" not in st.session_state:
     st.session_state.session_paper_ids = []
 
@@ -59,7 +58,7 @@ def login_screen():
                 if resp.status_code == 200:
                     st.success(f"User '{new_username}' created! Please log in.")
                 else:
-                    st.error("User already exists or connection failed.")
+                    st.error(f"User already exists or connection failed: {resp.text}")
             except Exception as e:
                 st.error(f"Error: {e}")
 
@@ -68,13 +67,15 @@ def student_view():
     st.sidebar.title(f"👤 {st.session_state.user['username']}")
     st.sidebar.caption("Role: Student / Researcher")
     if st.sidebar.button("Logout"):
-        st.session_state.user = None
+        # Clear session state on logout
+        for key in st.session_state.keys():
+            del st.session_state[key]
         st.rerun()
 
     st.title("📄 Scientific Paper Analyzer")
     
     # 1. Ingest Papers Section
-    with st.expander("📤 Add Papers via arXiv URL", expanded=(st.session_state.current_paper_id is None)):
+    with st.expander("📤 Add Papers via arXiv URL", expanded=(not st.session_state.summaries)):
         arxiv_urls_text = st.text_area(
             "Enter up to 10 arXiv URLs (one per line):",
             height=250,
@@ -94,27 +95,26 @@ def student_view():
 
                         if response.status_code == 200:
                             data = response.json()
-                            # Store all paper IDs for the session
+                            st.json(data) # DEBUG: Show the raw response
                             st.session_state.session_paper_ids = data["session_paper_ids"]
-                            st.session_state.current_summary = data["summary"]
+                            st.session_state.summaries = data["summaries"]
                             st.success("Analysis Complete!")
-                            
-                            # Set a current_paper_id for the Q&A box to be functional in the interim.
-                            # The Q&A logic will be updated later to use the full list.
-                            if data["session_paper_ids"]:
-                                st.session_state.current_paper_id = data["session_paper_ids"][0]
                         else:
-                            st.error(f"Error during analysis: {response.text}")
+                            st.error(f"Error during analysis: {response.status_code} - {response.text}")
                     except Exception as e:
-                        st.error(f"Connection Error: {e}")
+                        st.error(f"An unexpected error occurred: {e}")
+                        st.code(traceback.format_exc())
 
     # 2. Summary Section
-    if st.session_state.current_summary:
-        st.info(f"**Summary:** {st.session_state.current_summary}")
+    if st.session_state.summaries:
+        st.subheader("📝 Summaries of Initial Papers")
+        for paper_id, summary in st.session_state.summaries.items():
+            with st.expander(f"**Summary for paper: {paper_id}**"):
+                st.markdown(summary)
 
     # 3. Q&A Section
     st.divider()
-    st.subheader("💬 Q&A")
+    st.subheader("💬 Q&A with the Expanded Knowledge Base")
     
     # Display History
     for message in st.session_state.messages:
@@ -146,9 +146,13 @@ def student_view():
                     placeholder.markdown(answer)
                     st.session_state.messages.append({"role": "assistant", "content": answer})
                 else:
-                    placeholder.error("Failed to get response.")
+                    error_message = f"Failed to get response. Status: {resp.status_code}, Body: {resp.text}"
+                    placeholder.error(error_message)
+                    st.session_state.messages.append({"role": "assistant", "content": error_message})
             except Exception as e:
-                placeholder.error(f"Error: {e}")
+                error_message = f"An exception occurred: {e}"
+                placeholder.error(error_message)
+                st.session_state.messages.append({"role": "assistant", "content": error_message})
 
 # --- ADMIN UI ---
 def admin_view():

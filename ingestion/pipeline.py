@@ -22,6 +22,8 @@ def _extract_text(pdf_bytes: bytes) -> str:
     for i, page in enumerate(reader.pages):
         # Add page delimiters to enable citation logic
         page_text = page.extract_text() or ""
+        # Clean text to remove problematic characters for downstream APIs
+        page_text = page_text.encode("utf-8", "replace").decode("utf-8")
         text.append(f"\n--- PAGE {i+1} ---\n{page_text}")
     
     full_text = "".join(text)

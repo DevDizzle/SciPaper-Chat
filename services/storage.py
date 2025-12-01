@@ -105,6 +105,29 @@ def fetch_chunks(chunk_ids: List[str]) -> Dict[str, Dict]:
     return found
 
 
+def fetch_chunks_for_papers(paper_ids: List[str]) -> List[str]:
+    """Fetches all chunk texts for a list of paper IDs."""
+    if not paper_ids:
+        return []
+
+    client = get_client()
+    collection = client.collection(config.CHUNKS_COLLECTION)
+    
+    # Firestore 'in' query supports up to 30 values.
+    # If more are needed, chunk the requests.
+    text_chunks = []
+    for i in range(0, len(paper_ids), 30):
+        chunk_of_ids = paper_ids[i:i+30]
+        query = collection.where(filter=firestore.FieldFilter("paper_id", "in", chunk_of_ids))
+        documents = query.stream()
+        for doc in documents:
+            data = doc.to_dict()
+            if data and "text" in data:
+                text_chunks.append(data["text"])
+    
+    return text_chunks
+
+
 # --- NEW: User Management for Demo ---
 
 def create_user(username: str, role: str) -> bool:
