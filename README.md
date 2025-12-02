@@ -43,7 +43,7 @@ Authentication uses Application Default Credentials for Firestore, Vertex AI, an
     ```
 3.  Deploy to Cloud Run with the necessary environment variables:
     ```bash
-    bash SciPaper-Chat/deploy.sh
+    bash SciPaper-Chat/scripts/deploy.sh
     ```
 4.  Verify the service is running by checking the `/health` endpoint.
 
